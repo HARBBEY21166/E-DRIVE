@@ -1,4 +1,5 @@
 "use client"
+
 import { View, Text, Image, StyleSheet, SafeAreaView, Dimensions } from "react-native"
 import { useRouter } from "expo-router"
 import CustomButton from "../../components/CustomButton"

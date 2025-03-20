@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from "react-native"
 import { useRouter } from "expo-router"
 import InputField from "../../components/InputField"
@@ -18,10 +19,12 @@ import CustomButton from "../../components/CustomButton"
 import OAuth from "../../components/OAuth"
 import useStore from "../../store"
 import { validateEmail } from "../../lib/utils"
+import { useGoogleSignIn } from "../../lib/auth"
 
 const SignInScreen = () => {
   const router = useRouter()
   const { login, loginWithGoogle, isLoading, authError } = useStore()
+  const { promptAsync, response } = useGoogleSignIn()
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
@@ -29,6 +32,12 @@ const SignInScreen = () => {
     email: "",
     password: "",
   })
+
+  useEffect(() => {
+    if (response?.type === "success" && response.authentication) {
+      handleGoogleAuthResponse(response.authentication.accessToken)
+    }
+  }, [response])
 
   const validateForm = () => {
     let isValid = true
@@ -61,7 +70,16 @@ const SignInScreen = () => {
   }
 
   const handleGoogleSignIn = async () => {
-    const success = await loginWithGoogle()
+    try {
+      await promptAsync()
+    } catch (error) {
+      console.error("Google sign in error:", error)
+      Alert.alert("Error", "Failed to sign in with Google. Please try again.")
+    }
+  }
+
+  const handleGoogleAuthResponse = async (accessToken: string) => {
+    const success = await loginWithGoogle(accessToken)
     if (success) {
       router.replace("/(root)/(tabs)/home")
     }

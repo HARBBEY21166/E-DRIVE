@@ -1,7 +1,17 @@
-import * as SecureStore from "expo-secure-store"
+import { supabase, getUserProfile } from "./supabase"
+import * as Google from "expo-auth-session/providers/google"
+import * as WebBrowser from "expo-web-browser"
 
-// Mock user data
-interface User {
+// Register for native Google authentication
+WebBrowser.maybeCompleteAuthSession()
+
+// Replace with your Google OAuth client IDs
+const GOOGLE_CLIENT_ID_ANDROID = "YOUR_ANDROID_CLIENT_ID"
+const GOOGLE_CLIENT_ID_IOS = "YOUR_IOS_CLIENT_ID"
+const GOOGLE_CLIENT_ID_WEB = "387905480988-tmcg84vfo0n42aa6oj1pn6loj2h4lppn.apps.googleusercontent.com"
+
+// User interface
+export interface User {
   id: string
   email: string
   name: string
@@ -10,7 +20,7 @@ interface User {
 }
 
 // Auth state
-interface AuthState {
+export interface AuthState {
   user: User | null
   token: string | null
   isLoading: boolean
@@ -18,58 +28,51 @@ interface AuthState {
 }
 
 // Initial auth state
-const initialAuthState: AuthState = {
+export const initialAuthState: AuthState = {
   user: null,
   token: null,
   isLoading: false,
   error: null,
 }
 
-// Storage keys
-const TOKEN_KEY = "auth_token"
-const USER_KEY = "auth_user"
-
 /**
  * Sign in with email and password
  */
 export const signIn = async (email: string, password: string): Promise<AuthState> => {
   try {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    const { data, error } = await supabase.auth.signInWithPassword({
+      email,
+      password,
+    })
 
-    // Mock validation
-    if (email !== "user@example.com" || password !== "password") {
+    if (error) {
       return {
         ...initialAuthState,
-        error: "Invalid email or password",
+        error: error.message,
       }
     }
 
-    // Mock successful response
+    // Get user profile data
+    const profile = await getUserProfile(data.user.id)
+
     const user: User = {
-      id: "1",
-      email: "user@example.com",
-      name: "John Doe",
-      phone: "+1234567890",
-      avatar: "https://randomuser.me/api/portraits/men/1.jpg",
+      id: data.user.id,
+      email: data.user.email!,
+      name: profile?.name || data.user.email!.split("@")[0],
+      phone: profile?.phone,
+      avatar: profile?.avatar_url,
     }
-
-    const token = "mock_token_" + Math.random().toString(36).substring(2)
-
-    // Store in secure storage
-    await SecureStore.setItemAsync(TOKEN_KEY, token)
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user))
 
     return {
       user,
-      token,
+      token: data.session.access_token,
       isLoading: false,
       error: null,
     }
-  } catch (error) {
+  } catch (error: any) {
     return {
       ...initialAuthState,
-      error: "An error occurred during sign in",
+      error: error.message || "An error occurred during sign in",
     }
   }
 }
@@ -79,33 +82,59 @@ export const signIn = async (email: string, password: string): Promise<AuthState
  */
 export const signUp = async (email: string, password: string, name: string, phone?: string): Promise<AuthState> => {
   try {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
-
-    // Mock successful response
-    const user: User = {
-      id: "1",
+    // Create the user
+    const { data, error } = await supabase.auth.signUp({
       email,
-      name,
-      phone,
+      password,
+    })
+
+    if (error) {
+      return {
+        ...initialAuthState,
+        error: error.message,
+      }
     }
 
-    const token = "mock_token_" + Math.random().toString(36).substring(2)
+    if (!data.user) {
+      return {
+        ...initialAuthState,
+        error: "Email confirmation required. Please check your inbox.",
+      }
+    }
 
-    // Store in secure storage
-    await SecureStore.setItemAsync(TOKEN_KEY, token)
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user))
+    // Create user profile
+    const { error: profileError } = await supabase.from("profiles").insert([
+      {
+        id: data.user.id,
+        name,
+        phone,
+        avatar_url: null,
+        created_at: new Date(),
+      },
+    ])
+
+    if (profileError) {
+      console.error("Error creating profile:", profileError)
+    }
+
+    const user: User = {
+      id: data.user.id,
+      email: data.user.email!,
+      name,
+      phone,
+      avatar: null,
+    }
 
     return {
       user,
-      token,
+      token: data.session?.access_token || null,
       isLoading: false,
       error: null,
     }
-  } catch (error) {
+  } catch (error: any) {
     return {
       ...initialAuthState,
-      error: "An error occurred during sign up",
+      error: error.message || "An error occurred during sign up",
     }
   }
 }
@@ -115,8 +144,7 @@ export const signUp = async (email: string, password: string, name: string, phon
  */
 export const signOut = async (): Promise<void> => {
   try {
-    await SecureStore.deleteItemAsync(TOKEN_KEY)
-    await SecureStore.deleteItemAsync(USER_KEY)
+    await supabase.auth.signOut()
   } catch (error) {
     console.error("Error signing out:", error)
   }
@@ -127,18 +155,36 @@ export const signOut = async (): Promise<void> => {
  */
 export const getAuthState = async (): Promise<AuthState> => {
   try {
-    const token = await SecureStore.getItemAsync(TOKEN_KEY)
-    const userString = await SecureStore.getItemAsync(USER_KEY)
+    const {
+      data: { session },
+    } = await supabase.auth.getSession()
 
-    if (!token || !userString) {
+    if (!session) {
       return initialAuthState
     }
 
-    const user = JSON.parse(userString) as User
+    const {
+      data: { user },
+    } = await supabase.auth.getUser()
+
+    if (!user) {
+      return initialAuthState
+    }
+
+    // Get user profile data
+    const profile = await getUserProfile(user.id)
+
+    const userData: User = {
+      id: user.id,
+      email: user.email!,
+      name: profile?.name || user.email!.split("@")[0],
+      phone: profile?.phone,
+      avatar: profile?.avatar_url,
+    }
 
     return {
-      user,
-      token,
+      user: userData,
+      token: session.access_token,
       isLoading: false,
       error: null,
     }
@@ -148,37 +194,71 @@ export const getAuthState = async (): Promise<AuthState> => {
 }
 
 /**
+ * Hook for Google Sign In
+ */
+export const useGoogleSignIn = () => {
+  const [request, response, promptAsync] = Google.useAuthRequest({
+    androidClientId: GOOGLE_CLIENT_ID_ANDROID,
+    iosClientId: GOOGLE_CLIENT_ID_IOS,
+    webClientId: GOOGLE_CLIENT_ID_WEB,
+    expoClientId: GOOGLE_CLIENT_ID_WEB,
+  })
+
+  return { request, response, promptAsync }
+}
+
+/**
  * Sign in with Google
  */
-export const signInWithGoogle = async (): Promise<AuthState> => {
+export const signInWithGoogle = async (accessToken: string): Promise<AuthState> => {
   try {
-    // Simulate API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    const { data, error } = await supabase.auth.signInWithIdToken({
+      provider: "google",
+      token: accessToken,
+    })
 
-    // Mock successful response
-    const user: User = {
-      id: "2",
-      email: "google@example.com",
-      name: "Google User",
-      avatar: "https://randomuser.me/api/portraits/women/1.jpg",
+    if (error) {
+      return {
+        ...initialAuthState,
+        error: error.message,
+      }
     }
 
-    const token = "mock_google_token_" + Math.random().toString(36).substring(2)
+    // Check if profile exists, if not create it
+    let profile = await getUserProfile(data.user.id)
 
-    // Store in secure storage
-    await SecureStore.setItemAsync(TOKEN_KEY, token)
-    await SecureStore.setItemAsync(USER_KEY, JSON.stringify(user))
+    if (!profile) {
+      // Create user profile
+      await supabase.from("profiles").insert([
+        {
+          id: data.user.id,
+          name: data.user.user_metadata.full_name || data.user.email!.split("@")[0],
+          avatar_url: data.user.user_metadata.avatar_url,
+          created_at: new Date(),
+        },
+      ])
+
+      profile = await getUserProfile(data.user.id)
+    }
+
+    const user: User = {
+      id: data.user.id,
+      email: data.user.email!,
+      name: profile?.name || data.user.user_metadata.full_name || data.user.email!.split("@")[0],
+      phone: profile?.phone,
+      avatar: profile?.avatar_url || data.user.user_metadata.avatar_url,
+    }
 
     return {
       user,
-      token,
+      token: data.session.access_token,
       isLoading: false,
       error: null,
     }
-  } catch (error) {
+  } catch (error: any) {
     return {
       ...initialAuthState,
-      error: "An error occurred during Google sign in",
+      error: error.message || "An error occurred during Google sign in",
     }
   }
 }

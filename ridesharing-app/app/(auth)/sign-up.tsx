@@ -1,6 +1,6 @@
 "use client"
 
-import { useState } from "react"
+import { useState, useEffect } from "react"
 import {
   View,
   Text,
@@ -11,6 +11,7 @@ import {
   ScrollView,
   KeyboardAvoidingView,
   Platform,
+  Alert,
 } from "react-native"
 import { useRouter } from "expo-router"
 import InputField from "../../components/InputField"
@@ -18,10 +19,12 @@ import CustomButton from "../../components/CustomButton"
 import OAuth from "../../components/OAuth"
 import useStore from "../../store"
 import { validateEmail } from "../../lib/utils"
+import { useGoogleSignIn } from "../../lib/auth"
 
 const SignUpScreen = () => {
   const router = useRouter()
   const { register, loginWithGoogle, isLoading, authError } = useStore()
+  const { promptAsync, response } = useGoogleSignIn()
 
   const [name, setName] = useState("")
   const [email, setEmail] = useState("")
@@ -35,6 +38,12 @@ const SignUpScreen = () => {
     password: "",
     confirmPassword: "",
   })
+
+  useEffect(() => {
+    if (response?.type === "success" && response.authentication) {
+      handleGoogleAuthResponse(response.authentication.accessToken)
+    }
+  }, [response])
 
   const validateForm = () => {
     let isValid = true
@@ -82,11 +91,24 @@ const SignUpScreen = () => {
     const success = await register(email, password, name, phone)
     if (success) {
       router.replace("/(root)/(tabs)/home")
+    } else if (authError && authError.includes("confirmation")) {
+      Alert.alert("Email Verification Required", "Please check your email to verify your account before signing in.", [
+        { text: "OK", onPress: () => router.push("/(auth)/sign-in") },
+      ])
     }
   }
 
   const handleGoogleSignIn = async () => {
-    const success = await loginWithGoogle()
+    try {
+      await promptAsync()
+    } catch (error) {
+      console.error("Google sign in error:", error)
+      Alert.alert("Error", "Failed to sign in with Google. Please try again.")
+    }
+  }
+
+  const handleGoogleAuthResponse = async (accessToken: string) => {
+    const success = await loginWithGoogle(accessToken)
     if (success) {
       router.replace("/(root)/(tabs)/home")
     }
@@ -112,7 +134,7 @@ const SignUpScreen = () => {
             <Text style={styles.title}>Create Account</Text>
             <Text style={styles.subtitle}>Sign up to get started</Text>
 
-            {authError && <Text style={styles.errorText}>{authError}</Text>}
+            {authError && !authError.includes("confirmation") && <Text style={styles.errorText}>{authError}</Text>}
 
             <InputField
               label="Full Name"

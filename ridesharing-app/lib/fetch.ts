@@ -16,7 +16,7 @@ interface ApiResponse<T> {
 /**
  * Generic fetch function with error handling
  */
-export const fetchApi = async <T>(\
+export const fetchApi = async <T>(
   endpoint: string,
   options: RequestInit = {},
   token?: string

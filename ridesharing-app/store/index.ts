@@ -1,5 +1,6 @@
 import { create } from "zustand"
 import { getAuthState, signIn, signOut, signUp, signInWithGoogle } from "../lib/auth"
+import { supabase } from "../lib/supabase"
 import type { LocationDetails } from "../lib/map"
 
 // User interface
@@ -81,7 +82,7 @@ interface AppState {
   login: (email: string, password: string) => Promise<boolean>
   register: (email: string, password: string, name: string, phone?: string) => Promise<boolean>
   logout: () => Promise<void>
-  loginWithGoogle: () => Promise<boolean>
+  loginWithGoogle: (accessToken: string) => Promise<boolean>
 
   setCurrentLocation: (location: LocationDetails | null) => void
   setSelectedPickup: (location: LocationDetails | null) => void
@@ -218,11 +219,11 @@ export const useStore = create<AppState>((set, get) => ({
     }
   },
 
-  loginWithGoogle: async () => {
+  loginWithGoogle: async (accessToken) => {
     set({ isLoading: true, authError: null })
 
     try {
-      const authState = await signInWithGoogle()
+      const authState = await signInWithGoogle(accessToken)
 
       set({
         user: authState.user,
@@ -272,139 +273,253 @@ export const useStore = create<AppState>((set, get) => ({
   },
 
   createRide: async (ride) => {
-    // Mock API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      // Get the current user
+      const userId = get().user?.id
 
-    const newRide: Ride = {
-      id: Math.random().toString(36).substring(2, 15),
-      userId: get().user?.id || "",
-      status: "pending",
-      pickup: ride.pickup ||
-        get().selectedPickup ||
-        get().currentLocation || {
-          coordinates: { latitude: 0, longitude: 0 },
-          address: "Unknown location",
+      if (!userId) {
+        throw new Error("User not authenticated")
+      }
+
+      // Create the ride in Supabase
+      const { data, error } = await supabase
+        .from("rides")
+        .insert([
+          {
+            user_id: userId,
+            status: "pending",
+            pickup_address: ride.pickup?.address,
+            pickup_lat: ride.pickup?.coordinates.latitude,
+            pickup_lng: ride.pickup?.coordinates.longitude,
+            destination_address: ride.destination?.address,
+            destination_lat: ride.destination?.coordinates.latitude,
+            destination_lng: ride.destination?.coordinates.longitude,
+            price: ride.price || 0,
+            distance: ride.distance || 0,
+            duration: ride.duration || 0,
+            created_at: new Date().toISOString(),
+            scheduled_for: ride.scheduledFor?.toISOString(),
+          },
+        ])
+        .select()
+        .single()
+
+      if (error) {
+        console.error("Error creating ride:", error)
+        return null
+      }
+
+      // Convert the Supabase data to our Ride format
+      const newRide: Ride = {
+        id: data.id,
+        userId: data.user_id,
+        driverId: data.driver_id,
+        status: data.status,
+        pickup: {
+          coordinates: {
+            latitude: data.pickup_lat,
+            longitude: data.pickup_lng,
+          },
+          address: data.pickup_address,
         },
-      destination: ride.destination ||
-        get().selectedDestination || {
-          coordinates: { latitude: 0, longitude: 0 },
-          address: "Unknown location",
+        destination: {
+          coordinates: {
+            latitude: data.destination_lat,
+            longitude: data.destination_lng,
+          },
+          address: data.destination_address,
         },
-      price: ride.price || 0,
-      distance: ride.distance || 0,
-      duration: ride.duration || 0,
-      createdAt: new Date(),
-      scheduledFor: ride.scheduledFor,
+        price: data.price,
+        distance: data.distance,
+        duration: data.duration,
+        createdAt: new Date(data.created_at),
+        scheduledFor: data.scheduled_for ? new Date(data.scheduled_for) : undefined,
+      }
+
+      set((state) => ({
+        currentRide: newRide,
+        rides: [newRide, ...state.rides],
+      }))
+
+      return newRide
+    } catch (error) {
+      console.error("Error in createRide:", error)
+      return null
     }
-
-    set((state) => ({
-      currentRide: newRide,
-      rides: [newRide, ...state.rides],
-    }))
-
-    return newRide
   },
 
   updateRide: async (rideId, updates) => {
-    // Mock API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      // Prepare the updates for Supabase format
+      const supabaseUpdates: any = {}
 
-    let updatedRide: Ride | null = null
+      if (updates.status) supabaseUpdates.status = updates.status
+      if (updates.driverId) supabaseUpdates.driver_id = updates.driverId
 
-    set((state) => {
-      const rideIndex = state.rides.findIndex((r) => r.id === rideId)
-
-      if (rideIndex === -1) {
-        return state
+      if (updates.pickup) {
+        supabaseUpdates.pickup_address = updates.pickup.address
+        supabaseUpdates.pickup_lat = updates.pickup.coordinates.latitude
+        supabaseUpdates.pickup_lng = updates.pickup.coordinates.longitude
       }
 
-      const updatedRides = [...state.rides]
-      updatedRide = { ...updatedRides[rideIndex], ...updates }
-      updatedRides[rideIndex] = updatedRide
-
-      return {
-        rides: updatedRides,
-        currentRide: state.currentRide?.id === rideId ? updatedRide : state.currentRide,
+      if (updates.destination) {
+        supabaseUpdates.destination_address = updates.destination.address
+        supabaseUpdates.destination_lat = updates.destination.coordinates.latitude
+        supabaseUpdates.destination_lng = updates.destination.coordinates.longitude
       }
-    })
 
-    return updatedRide
+      if (updates.price !== undefined) supabaseUpdates.price = updates.price
+      if (updates.distance !== undefined) supabaseUpdates.distance = updates.distance
+      if (updates.duration !== undefined) supabaseUpdates.duration = updates.duration
+      if (updates.scheduledFor) supabaseUpdates.scheduled_for = updates.scheduledFor.toISOString()
+
+      // Update in Supabase
+      const { data, error } = await supabase.from("rides").update(supabaseUpdates).eq("id", rideId).select().single()
+
+      if (error) {
+        console.error("Error updating ride:", error)
+        return null
+      }
+
+      // Convert the Supabase data to our Ride format
+      const updatedRide: Ride = {
+        id: data.id,
+        userId: data.user_id,
+        driverId: data.driver_id,
+        status: data.status,
+        pickup: {
+          coordinates: {
+            latitude: data.pickup_lat,
+            longitude: data.pickup_lng,
+          },
+          address: data.pickup_address,
+        },
+        destination: {
+          coordinates: {
+            latitude: data.destination_lat,
+            longitude: data.destination_lng,
+          },
+          address: data.destination_address,
+        },
+        price: data.price,
+        distance: data.distance,
+        duration: data.duration,
+        createdAt: new Date(data.created_at),
+        scheduledFor: data.scheduled_for ? new Date(data.scheduled_for) : undefined,
+      }
+
+      // Update in local state
+      set((state) => {
+        const rideIndex = state.rides.findIndex((r) => r.id === rideId)
+
+        if (rideIndex === -1) {
+          return state
+        }
+
+        const updatedRides = [...state.rides]
+        updatedRides[rideIndex] = updatedRide
+
+        return {
+          rides: updatedRides,
+          currentRide: state.currentRide?.id === rideId ? updatedRide : state.currentRide,
+        }
+      })
+
+      return updatedRide
+    } catch (error) {
+      console.error("Error in updateRide:", error)
+      return null
+    }
   },
 
   cancelRide: async (rideId) => {
-    // Mock API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      // Update the ride status to cancelled in Supabase
+      const { error } = await supabase.from("rides").update({ status: "cancelled" }).eq("id", rideId)
 
-    let success = false
-
-    set((state) => {
-      const rideIndex = state.rides.findIndex((r) => r.id === rideId)
-
-      if (rideIndex === -1) {
-        return state
+      if (error) {
+        console.error("Error cancelling ride:", error)
+        return false
       }
 
-      const updatedRides = [...state.rides]
-      updatedRides[rideIndex] = { ...updatedRides[rideIndex], status: "cancelled" }
+      // Update in local state
+      set((state) => {
+        const rideIndex = state.rides.findIndex((r) => r.id === rideId)
 
-      success = true
+        if (rideIndex === -1) {
+          return state
+        }
 
-      return {
-        rides: updatedRides,
-        currentRide: state.currentRide?.id === rideId ? null : state.currentRide,
-      }
-    })
+        const updatedRides = [...state.rides]
+        updatedRides[rideIndex] = { ...updatedRides[rideIndex], status: "cancelled" }
 
-    return success
+        return {
+          rides: updatedRides,
+          currentRide: state.currentRide?.id === rideId ? null : state.currentRide,
+        }
+      })
+
+      return true
+    } catch (error) {
+      console.error("Error in cancelRide:", error)
+      return false
+    }
   },
 
   fetchRides: async () => {
-    // Mock API call
-    await new Promise((resolve) => setTimeout(resolve, 1000))
+    try {
+      const userId = get().user?.id
 
-    // Mock data
-    const mockRides: Ride[] = [
-      {
-        id: "1",
-        userId: get().user?.id || "",
-        driverId: "driver1",
-        status: "completed",
+      if (!userId) {
+        return []
+      }
+
+      // Fetch rides from Supabase
+      const { data, error } = await supabase
+        .from("rides")
+        .select("*")
+        .eq("user_id", userId)
+        .order("created_at", { ascending: false })
+
+      if (error) {
+        console.error("Error fetching rides:", error)
+        return []
+      }
+
+      // Convert the Supabase data to our Ride format
+      const rides: Ride[] = data.map((ride) => ({
+        id: ride.id,
+        userId: ride.user_id,
+        driverId: ride.driver_id,
+        status: ride.status,
         pickup: {
-          coordinates: { latitude: 37.7749, longitude: -122.4194 },
-          address: "123 Main St, San Francisco, CA",
+          coordinates: {
+            latitude: ride.pickup_lat,
+            longitude: ride.pickup_lng,
+          },
+          address: ride.pickup_address,
         },
         destination: {
-          coordinates: { latitude: 37.7749, longitude: -122.4294 },
-          address: "456 Market St, San Francisco, CA",
+          coordinates: {
+            latitude: ride.destination_lat,
+            longitude: ride.destination_lng,
+          },
+          address: ride.destination_address,
         },
-        price: 15.75,
-        distance: 2.3,
-        duration: 12,
-        createdAt: new Date(Date.now() - 86400000), // 1 day ago
-      },
-      {
-        id: "2",
-        userId: get().user?.id || "",
-        driverId: "driver2",
-        status: "completed",
-        pickup: {
-          coordinates: { latitude: 37.7749, longitude: -122.4194 },
-          address: "789 Mission St, San Francisco, CA",
-        },
-        destination: {
-          coordinates: { latitude: 37.7649, longitude: -122.4194 },
-          address: "101 California St, San Francisco, CA",
-        },
-        price: 22.5,
-        distance: 3.7,
-        duration: 18,
-        createdAt: new Date(Date.now() - 172800000), // 2 days ago
-      },
-    ]
+        price: ride.price,
+        distance: ride.distance,
+        duration: ride.duration,
+        createdAt: new Date(ride.created_at),
+        scheduledFor: ride.scheduled_for ? new Date(ride.scheduled_for) : undefined,
+      }))
 
-    set({ rides: mockRides })
+      set({ rides })
 
-    return mockRides
+      return rides
+    } catch (error) {
+      console.error("Error in fetchRides:", error)
+      return []
+    }
   },
 }))
 
