@@ -94,9 +94,9 @@ const BookRideScreen = () => {
         ...(pickupLocation
           ? [
               {
-                id: 'pickup',
+                id: "pickup",
                 coordinate: pickupLocation.coordinates,
-                title: 'Pickup',
+                title: "Pickup",
                 description: pickupLocation.address,
               },
             ]
@@ -104,16 +104,16 @@ const BookRideScreen = () => {
         ...(destinationLocation
           ? [
               {
-                id: 'destination',
+                id: "destination",
                 coordinate: destinationLocation.coordinates,
-                title: 'Destination',
+                title: "Destination",
                 description: destinationLocation.address,
               },
             ]
           : []),
       ]}
     />
-  );
+  )
 
   const bottomComponent = <CustomButton title="Find a Ride" onPress={handleFindRide} disabled={isButtonDisabled} />
 
@@ -145,5 +145,4 @@ const styles = StyleSheet.create({
   },
 })
 
-export default BookRideScreen
-
+export default BookRideScreen;
