@@ -1,5 +1,5 @@
 {
-"expo": {
+  "expo": {
     "name": "Ridesharing App",
     "slug": "ridesharing-app",
     "version": "1.0.0",
@@ -21,7 +21,12 @@
       "adaptiveIcon": {
         "foregroundImage": "./assets/adaptive-icon.png",
         "backgroundColor": "#ffffff"
-      }
+      },
+      "permissions": [
+        "android.permission.ACCESS_COARSE_LOCATION",
+        "android.permission.ACCESS_FINE_LOCATION"
+      ],
+      "package": "com.abbeybear.ridesharingapp"
     },
     "web": {
       "favicon": "./assets/favicon.png"
@@ -35,6 +40,14 @@
         }
       ]
     ],
-    "scheme": "ridesharing-app"
+    "scheme": "ridesharing-app",
+    "extra": {
+      "router": {
+        "origin": false
+      },
+      "eas": {
+        "projectId": "4d230ac0-62d4-4b29-8454-43fa9de02f57"
+      }
+    }
   }
 }
