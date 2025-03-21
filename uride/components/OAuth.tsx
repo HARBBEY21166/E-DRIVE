@@ -65,5 +65,5 @@ const styles = StyleSheet.create({
   },
 })
 
-export default OAuth
+export default OAuth;
 

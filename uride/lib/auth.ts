@@ -6,7 +6,7 @@ import * as WebBrowser from "expo-web-browser"
 WebBrowser.maybeCompleteAuthSession()
 
 // Replace with your Google OAuth client IDs
-const GOOGLE_CLIENT_ID_ANDROID = "YOUR_ANDROID_CLIENT_ID"
+const GOOGLE_CLIENT_ID_ANDROID = "387905480988-c6obtge7ju9j2b6fv3t6t1255g4o89ou.apps.googleusercontent.com"
 const GOOGLE_CLIENT_ID_IOS = "YOUR_IOS_CLIENT_ID"
 const GOOGLE_CLIENT_ID_WEB = "387905480988-tmcg84vfo0n42aa6oj1pn6loj2h4lppn.apps.googleusercontent.com"
 

@@ -4,7 +4,8 @@ import type React from "react"
 import { useState, useEffect } from "react"
 import { View, TextInput, StyleSheet, FlatList, Text, TouchableOpacity, ActivityIndicator } from "react-native"
 import { debounce } from "../lib/utils"
-import { getCoordinatesFromAddress } from "../lib/map"
+import { searchPlaces } from "../lib/map"
+import type { Coordinates } from "../lib/map"
 
 interface Place {
   id: string
@@ -22,6 +23,8 @@ interface LocationSearchInputProps {
   onChangeText: (text: string) => void
   onPlaceSelect: (place: Place) => void
   label?: string
+  nearLocation?: Coordinates
+  focusOnJohannesburg?: boolean
 }
 
 const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
@@ -30,12 +33,14 @@ const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
   onChangeText,
   onPlaceSelect,
   label,
+  nearLocation,
+  focusOnJohannesburg = true,
 }) => {
   const [predictions, setPredictions] = useState<Place[]>([])
   const [isLoading, setIsLoading] = useState(false)
   const [isFocused, setIsFocused] = useState(false)
 
-  // Function to fetch place predictions using Nominatim (OpenStreetMap)
+  // Function to fetch place predictions using Nominatim
   const fetchPredictions = async (text: string) => {
     if (!text) {
       setPredictions([])
@@ -45,29 +50,9 @@ const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
     setIsLoading(true)
 
     try {
-      // Mock data for now to avoid API rate limits during development
-      const mockPredictions = [
-        {
-          id: "1",
-          name: text + " Street",
-          address: "New York, NY, USA",
-          coordinates: { latitude: 40.7128, longitude: -74.006 },
-        },
-        {
-          id: "2",
-          name: text + " Avenue",
-          address: "Los Angeles, CA, USA",
-          coordinates: { latitude: 34.0522, longitude: -118.2437 },
-        },
-        {
-          id: "3",
-          name: text + " Boulevard",
-          address: "Chicago, IL, USA",
-          coordinates: { latitude: 41.8781, longitude: -87.6298 },
-        },
-      ]
-
-      setPredictions(mockPredictions)
+      // Use the searchPlaces function from map.ts
+      const results = await searchPlaces(text, nearLocation)
+      setPredictions(results)
     } catch (error) {
       console.error("Error fetching predictions:", error)
 
@@ -76,20 +61,20 @@ const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
         {
           id: "1",
           name: text + " Street",
-          address: "New York, NY, USA",
-          coordinates: { latitude: 40.7128, longitude: -74.006 },
+          address: "Johannesburg, South Africa",
+          coordinates: { latitude: -26.205, longitude: 28.049722 },
         },
         {
           id: "2",
           name: text + " Avenue",
-          address: "Los Angeles, CA, USA",
-          coordinates: { latitude: 34.0522, longitude: -118.2437 },
+          address: "Sandton, Johannesburg, South Africa",
+          coordinates: { latitude: -26.107567, longitude: 28.056702 },
         },
         {
           id: "3",
-          name: text + " Boulevard",
-          address: "Chicago, IL, USA",
-          coordinates: { latitude: 41.8781, longitude: -87.6298 },
+          name: text + " Road",
+          address: "Soweto, Johannesburg, South Africa",
+          coordinates: { latitude: -26.2227, longitude: 27.8898 },
         },
       ]
 
@@ -105,15 +90,7 @@ const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
     debouncedFetchPredictions(value)
   }, [value])
 
-  const handlePlaceSelect = async (place: Place) => {
-    // If coordinates are not already available, get them
-    if (!place.coordinates) {
-      const coordinates = await getCoordinatesFromAddress(place.address)
-      if (coordinates) {
-        place.coordinates = coordinates
-      }
-    }
-
+  const handlePlaceSelect = (place: Place) => {
     onPlaceSelect(place)
     onChangeText(place.name)
     setPredictions([])
@@ -214,4 +191,5 @@ const styles = StyleSheet.create({
   },
 })
 
-export default LocationSearchInput;
+export default LocationSearchInput
+

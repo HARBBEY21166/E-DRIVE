@@ -24,7 +24,9 @@ export const getCurrentLocation = async (): Promise<LocationDetails | null> => {
       return null
     }
 
-    const location = await Location.getCurrentPositionAsync({})
+    const location = await Location.getCurrentPositionAsync({
+      accuracy: Location.Accuracy.Highest,
+    })
     const { latitude, longitude } = location.coords
 
     // Get address from coordinates
@@ -45,23 +47,7 @@ export const getCurrentLocation = async (): Promise<LocationDetails | null> => {
  */
 export const getAddressFromCoordinates = async (latitude: number, longitude: number): Promise<string> => {
   try {
-    // First try using Expo Location
-    try {
-      const result = await Location.reverseGeocodeAsync({
-        latitude,
-        longitude,
-      })
-
-      if (result.length > 0) {
-        const { street, city, region, postalCode, country } = result[0]
-        const addressParts = [street, city, region, postalCode, country].filter(Boolean)
-        return addressParts.join(", ")
-      }
-    } catch (error) {
-      console.log("Expo reverse geocode failed, trying Nominatim")
-    }
-
-    // Fallback to Nominatim API (OpenStreetMap)
+    // Use Nominatim API for reverse geocoding
     const response = await fetch(
       `https://nominatim.openstreetmap.org/reverse?format=json&lat=${latitude}&lon=${longitude}&zoom=18&addressdetails=1`,
       {
@@ -71,6 +57,10 @@ export const getAddressFromCoordinates = async (latitude: number, longitude: num
         },
       },
     )
+
+    if (!response.ok) {
+      throw new Error(`Nominatim API error: ${response.status}`)
+    }
 
     const data = await response.json()
 
@@ -87,29 +77,34 @@ export const getAddressFromCoordinates = async (latitude: number, longitude: num
 
 /**
  * Get coordinates from address using Nominatim (OpenStreetMap)
+ * @param address The address to geocode
+ * @param viewbox Optional bounding box to limit search (e.g. for Johannesburg area)
  */
-export const getCoordinatesFromAddress = async (address: string): Promise<Coordinates | null> => {
+export const getCoordinatesFromAddress = async (address: string, viewbox?: string): Promise<Coordinates | null> => {
   try {
-    // First try using Expo Location
-    try {
-      const result = await Location.geocodeAsync(address)
-
-      if (result.length > 0) {
-        const { latitude, longitude } = result[0]
-        return { latitude, longitude }
-      }
-    } catch (error) {
-      console.log("Expo geocode failed, trying Nominatim")
-    }
-
-    // Fallback to Nominatim API (OpenStreetMap)
     const encodedAddress = encodeURIComponent(address)
-    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`, {
+
+    // Default viewbox for Johannesburg area if none provided
+    // Format: min longitude, min latitude, max longitude, max latitude
+    const johannesburgViewbox = "27.9,26.3,28.2,26.1"
+    const viewboxParam = viewbox || johannesburgViewbox
+
+    // Build the URL with parameters
+    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=5`
+
+    // Add viewbox parameter to focus search on Johannesburg area
+    url += `&viewbox=${viewboxParam}&bounded=1`
+
+    const response = await fetch(url, {
       headers: {
         "Accept-Language": "en",
         "User-Agent": "RidesharingApp/1.0",
       },
     })
+
+    if (!response.ok) {
+      throw new Error(`Nominatim API error: ${response.status}`)
+    }
 
     const data = await response.json()
 
@@ -128,6 +123,68 @@ export const getCoordinatesFromAddress = async (address: string): Promise<Coordi
 }
 
 /**
+ * Search for places by name or address
+ * @param query The search query
+ * @param near Optional coordinates to search near
+ */
+export const searchPlaces = async (
+  query: string,
+  near?: Coordinates,
+): Promise<
+  Array<{
+    id: string
+    name: string
+    address: string
+    coordinates: Coordinates
+  }>
+> => {
+  try {
+    const encodedQuery = encodeURIComponent(query)
+
+    // Build the URL with parameters
+    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedQuery}&limit=5`
+
+    // If near coordinates provided, add them to focus search
+    if (near) {
+      // Add a viewbox around the provided coordinates (approximately 10km)
+      const delta = 0.1 // roughly 10km
+      const viewbox = `${near.longitude - delta},${near.latitude - delta},${near.longitude + delta},${near.latitude + delta}`
+      url += `&viewbox=${viewbox}&bounded=1`
+    } else {
+      // Default to Johannesburg area if no coordinates provided
+      const johannesburgViewbox = "27.9,26.3,28.2,26.1"
+      url += `&viewbox=${johannesburgViewbox}&bounded=1`
+    }
+
+    const response = await fetch(url, {
+      headers: {
+        "Accept-Language": "en",
+        "User-Agent": "RidesharingApp/1.0",
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Nominatim API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+
+    return data.map((item: any) => ({
+      id: item.place_id.toString(),
+      name: item.display_name.split(",")[0],
+      address: item.display_name,
+      coordinates: {
+        latitude: Number.parseFloat(item.lat),
+        longitude: Number.parseFloat(item.lon),
+      },
+    }))
+  } catch (error) {
+    console.error("Error searching places:", error)
+    return []
+  }
+}
+
+/**
  * Calculate route between two points using OSRM (Open Source Routing Machine)
  */
 export const calculateRoute = async (
@@ -142,7 +199,17 @@ export const calculateRoute = async (
     // Use OSRM API for routing
     const response = await fetch(
       `https://router.project-osrm.org/route/v1/driving/${origin.longitude},${origin.latitude};${destination.longitude},${destination.latitude}?overview=full&geometries=geojson`,
+      {
+        headers: {
+          Accept: "application/json",
+          "Content-Type": "application/json",
+        },
+      },
     )
+
+    if (!response.ok) {
+      throw new Error(`OSRM API error: ${response.status}`)
+    }
 
     const data = await response.json()
 
@@ -186,7 +253,6 @@ export const calculateRoute = async (
 
     // Calculate mock distance and duration
     const distance = calculateDistance(origin.latitude, origin.longitude, destination.latitude, destination.longitude)
-
     const duration = distance * 2 // Rough estimate: 2 minutes per km
 
     return {
