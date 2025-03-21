@@ -60,12 +60,12 @@ if (Platform.OS !== "web") {
               coordinate={marker.coordinate}
               title={marker.title}
               description={marker.description}
-              pinColor={marker.isSelected ? "#4285F4" : undefined}
+              pinColor={marker.isSelected ? "#4CAF50" : undefined}
               onPress={() => handleMarkerPress(marker.id)}
             />
           ))}
 
-          {polyline && polyline.length > 0 && <Polyline coordinates={polyline} strokeWidth={4} strokeColor="#4285F4" />}
+          {polyline && polyline.length > 0 && <Polyline coordinates={polyline} strokeWidth={4} strokeColor="#4CAF50" />}
         </MapView>
       </View>
     )
@@ -108,19 +108,31 @@ if (Platform.OS === "web") {
       setWebViewKey((prev) => prev + 1)
     }, [markers, polyline])
 
-    // Create the HTML content for the Leaflet map
+    // Create the HTML content for the Leaflet map with routing
     const createLeafletHTML = () => {
-      const center = currentLocation ? [currentLocation.latitude, currentLocation.longitude] : [0, 0]
+      const center = currentLocation
+        ? [currentLocation.latitude, currentLocation.longitude]
+        : initialRegion
+          ? [initialRegion.latitude, initialRegion.longitude]
+          : [-26.2041, 28.0473] // Default to Johannesburg
 
       const markersJS = markers
         .map((marker) => {
+          const isPickup = marker.id === "pickup"
+          const isDestination = marker.id === "destination"
+
+          let markerColor = marker.isSelected ? "#4CAF50" : "#3388ff"
+          if (isPickup) markerColor = "#4CAF50"
+          if (isDestination) markerColor = "#ff4500"
+
           return `
             L.marker([${marker.coordinate.latitude}, ${marker.coordinate.longitude}], {
-              icon: ${
-                marker.isSelected
-                  ? 'L.divIcon({className: "selected-marker", html: "<div></div>", iconSize: [20, 20]})'
-                  : 'L.icon({iconUrl: "https://unpkg.com/leaflet@1.7.1/dist/images/marker-icon.png", iconSize: [25, 41], iconAnchor: [12, 41]})'
-              }
+              icon: L.divIcon({
+                className: '${isPickup ? "pickup-marker" : isDestination ? "destination-marker" : "default-marker"}',
+                html: '<div style="background-color: ${markerColor}; width: 12px; height: 12px; border-radius: 50%; border: 2px solid white;"></div>',
+                iconSize: [16, 16],
+                iconAnchor: [8, 8]
+              })
             })
             .addTo(map)
             .bindPopup("${(marker.title || "") + (marker.description ? ": " + marker.description : "")}")
@@ -134,15 +146,51 @@ if (Platform.OS === "web") {
         })
         .join("\n")
 
-      // Add polyline if provided
-      const polylineJS = polyline
-        ? `
+      // Add routing if we have pickup and destination markers
+      const pickupMarker = markers.find((m) => m.id === "pickup")
+      const destinationMarker = markers.find((m) => m.id === "destination")
+
+      let routingJS = ""
+      if (pickupMarker && destinationMarker) {
+        routingJS = `
+          // Add route between pickup and destination
+          const routingControl = L.Routing.control({
+            waypoints: [
+              L.latLng(${pickupMarker.coordinate.latitude}, ${pickupMarker.coordinate.longitude}),
+              L.latLng(${destinationMarker.coordinate.latitude}, ${destinationMarker.coordinate.longitude})
+            ],
+            routeWhileDragging: false,
+            lineOptions: {
+              styles: [
+                {color: '#4CAF50', opacity: 0.8, weight: 5}
+              ]
+            },
+            createMarker: function() { return null; }, // Don't create default markers
+            show: false, // Don't show the instructions panel
+            collapsible: true
+          }).addTo(map);
+          
+          routingControl.on('routesfound', function(e) {
+            const routes = e.routes;
+            const summary = routes[0].summary;
+            
+            // Send route info back to React Native
+            window.ReactNativeWebView.postMessage(JSON.stringify({
+              type: 'routeCalculated',
+              distance: summary.totalDistance / 1000, // km
+              duration: summary.totalTime / 60, // minutes
+            }));
+          });
+        `
+      } else if (polyline && polyline.length > 0) {
+        // If no routing but we have polyline data
+        routingJS = `
           var polylinePath = [
             ${polyline.map((point) => `[${point.latitude}, ${point.longitude}]`).join(",")}
           ];
-          L.polyline(polylinePath, {color: '#4285F4', weight: 5}).addTo(map);
+          L.polyline(polylinePath, {color: '#4CAF50', weight: 5}).addTo(map);
         `
-        : ""
+      }
 
       return `
         <!DOCTYPE html>
@@ -150,8 +198,10 @@ if (Platform.OS === "web") {
           <head>
             <meta charset="utf-8">
             <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no" />
-            <link rel="stylesheet" href="https://unpkg.com/leaflet@1.7.1/dist/leaflet.css" />
-            <script src="https://unpkg.com/leaflet@1.7.1/dist/leaflet.js"></script>
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.css" />
+            <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.min.css" />
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js"></script>
+            <script src="https://cdnjs.cloudflare.com/ajax/libs/leaflet-routing-machine/3.2.12/leaflet-routing-machine.min.js"></script>
             <style>
               body, html, #map {
                 height: 100%;
@@ -159,22 +209,23 @@ if (Platform.OS === "web") {
                 margin: 0;
                 padding: 0;
               }
-              .selected-marker {
-                background-color: #4285F4;
-                border-radius: 50%;
-                border: 2px solid white;
-              }
-              .selected-marker div {
-                width: 100%;
-                height: 100%;
-              }
               .pickup-marker {
-                background-color: #3B82F6;
+                background-color: #4CAF50;
                 border-radius: 50%;
                 border: 2px solid white;
               }
               .destination-marker {
-                background-color: #EF4444;
+                background-color: #ff4500;
+                border-radius: 50%;
+                border: 2px solid white;
+              }
+              .default-marker {
+                background-color: #3388ff;
+                border-radius: 50%;
+                border: 2px solid white;
+              }
+              .selected-marker {
+                background-color: #4CAF50;
                 border-radius: 50%;
                 border: 2px solid white;
               }
@@ -193,8 +244,8 @@ if (Platform.OS === "web") {
                 showUserLocation && currentLocation
                   ? `
                   L.circle([${currentLocation.latitude}, ${currentLocation.longitude}], {
-                    color: '#4285F4',
-                    fillColor: '#4285F4',
+                    color: '#4CAF50',
+                    fillColor: '#4CAF50',
                     fillOpacity: 0.3,
                     radius: 50
                   }).addTo(map);
@@ -204,7 +255,7 @@ if (Platform.OS === "web") {
               
               ${markersJS}
               
-              ${polylineJS}
+              ${routingJS}
               
               map.on('moveend', function() {
                 var center = map.getCenter();
@@ -246,14 +297,28 @@ if (Platform.OS === "web") {
           onMarkerPress(data.id)
         } else if (data.type === "mapClick" && onRegionChange) {
           // Handle map click for location selection
-          onRegionChange(data.coordinate)
+          onRegionChange({
+            coordinate: data.coordinate,
+            action: "click",
+          })
+        } else if (data.type === "routeCalculated") {
+          // Handle route calculation results
+          if (onRegionChange) {
+            onRegionChange({
+              routeInfo: {
+                distance: data.distance,
+                duration: data.duration,
+              },
+              action: "route",
+            })
+          }
         }
       } catch (error) {
         console.error("Error parsing WebView message:", error)
       }
     }
 
-    if (!currentLocation) {
+    if (!currentLocation && !initialRegion) {
       return <View style={styles.loadingContainer} />
     }
 

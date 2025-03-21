@@ -76,54 +76,7 @@ export const getAddressFromCoordinates = async (latitude: number, longitude: num
 }
 
 /**
- * Get coordinates from address using Nominatim (OpenStreetMap)
- * @param address The address to geocode
- * @param viewbox Optional bounding box to limit search (e.g. for Johannesburg area)
- */
-export const getCoordinatesFromAddress = async (address: string, viewbox?: string): Promise<Coordinates | null> => {
-  try {
-    const encodedAddress = encodeURIComponent(address)
-
-    // Default viewbox for Johannesburg area if none provided
-    // Format: min longitude, min latitude, max longitude, max latitude
-    const johannesburgViewbox = "27.9,26.3,28.2,26.1"
-    const viewboxParam = viewbox || johannesburgViewbox
-
-    // Build the URL with parameters
-    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=5`
-
-    // Add viewbox parameter to focus search on Johannesburg area
-    url += `&viewbox=${viewboxParam}&bounded=1`
-
-    const response = await fetch(url, {
-      headers: {
-        "Accept-Language": "en",
-        "User-Agent": "RidesharingApp/1.0",
-      },
-    })
-
-    if (!response.ok) {
-      throw new Error(`Nominatim API error: ${response.status}`)
-    }
-
-    const data = await response.json()
-
-    if (data && data.length > 0) {
-      return {
-        latitude: Number.parseFloat(data[0].lat),
-        longitude: Number.parseFloat(data[0].lon),
-      }
-    }
-
-    return null
-  } catch (error) {
-    console.error("Error getting coordinates from address:", error)
-    return null
-  }
-}
-
-/**
- * Search for places by name or address
+ * Search for places using Photon API (better for Johannesburg)
  * @param query The search query
  * @param near Optional coordinates to search near
  */
@@ -139,22 +92,99 @@ export const searchPlaces = async (
   }>
 > => {
   try {
+    if (!query || query.trim().length < 3) {
+      return []
+    }
+
+    const encodedQuery = encodeURIComponent(query)
+
+    // Johannesburg bounding box (approximate)
+    const joburg_bbox = "27.85,-26.35,28.25,-26.05"
+
+    // Use Photon API which has better coverage for Johannesburg
+    const response = await fetch(`https://photon.komoot.io/api/?q=${encodedQuery}&bbox=${joburg_bbox}&limit=5`, {
+      headers: {
+        "Accept-Language": "en",
+        "User-Agent": "RidesharingApp/1.0",
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Photon API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+
+    // Filter results to Johannesburg area
+    const results = data.features
+      .filter((feature: any) => {
+        const properties = feature.properties
+        return (
+          properties.city === "Johannesburg" || properties.name === "Johannesburg" || properties.state === "Gauteng"
+        )
+      })
+      .map((feature: any) => {
+        const properties = feature.properties
+        const coordinates = feature.geometry.coordinates
+
+        // Format the display address
+        let address = properties.name || ""
+
+        if (properties.street) {
+          address += address ? `, ${properties.street}` : properties.street
+        }
+
+        if (properties.district) {
+          address += address ? `, ${properties.district}` : properties.district
+        }
+
+        if (properties.city) {
+          address += address ? `, ${properties.city}` : properties.city
+        }
+
+        return {
+          id: `place_${Math.random().toString(36).substring(2, 10)}`,
+          name: properties.name || address.split(",")[0],
+          address: address,
+          coordinates: {
+            latitude: coordinates[1],
+            longitude: coordinates[0],
+          },
+        }
+      })
+
+    return results
+  } catch (error) {
+    console.error("Error searching places:", error)
+
+    // Fallback to Nominatim if Photon fails
+    return searchPlacesWithNominatim(query, near)
+  }
+}
+
+/**
+ * Fallback search using Nominatim
+ */
+const searchPlacesWithNominatim = async (
+  query: string,
+  near?: Coordinates,
+): Promise<
+  Array<{
+    id: string
+    name: string
+    address: string
+    coordinates: Coordinates
+  }>
+> => {
+  try {
     const encodedQuery = encodeURIComponent(query)
 
     // Build the URL with parameters
-    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedQuery}&limit=5`
+    let url = `https://nominatim.openstreetmap.org/search?format=json&q=${encodedQuery}&limit=5&countrycodes=za`
 
-    // If near coordinates provided, add them to focus search
-    if (near) {
-      // Add a viewbox around the provided coordinates (approximately 10km)
-      const delta = 0.1 // roughly 10km
-      const viewbox = `${near.longitude - delta},${near.latitude - delta},${near.longitude + delta},${near.latitude + delta}`
-      url += `&viewbox=${viewbox}&bounded=1`
-    } else {
-      // Default to Johannesburg area if no coordinates provided
-      const johannesburgViewbox = "27.9,26.3,28.2,26.1"
-      url += `&viewbox=${johannesburgViewbox}&bounded=1`
-    }
+    // Add viewbox parameter to focus search on Johannesburg area
+    const johannesburgViewbox = "27.85,-26.35,28.25,-26.05"
+    url += `&viewbox=${johannesburgViewbox}&bounded=1`
 
     const response = await fetch(url, {
       headers: {
@@ -179,7 +209,7 @@ export const searchPlaces = async (
       },
     }))
   } catch (error) {
-    console.error("Error searching places:", error)
+    console.error("Error searching places with Nominatim:", error)
     return []
   }
 }
@@ -283,5 +313,68 @@ export const calculateDistance = (lat1: number, lon1: number, lat2: number, lon2
  */
 const deg2rad = (deg: number): number => {
   return deg * (Math.PI / 180)
+}
+
+/**
+ * Calculate ride price based on distance and duration
+ */
+export const calculateRidePrice = (
+  distance: number,
+  duration: number,
+  rideType: "standard" | "xl" | "premium" = "standard",
+): number => {
+  // Base price in Rand
+  const basePrice = 50
+
+  // Price per km
+  const pricePerKm = 10
+
+  // Calculate standard price
+  const standardPrice = basePrice + distance * pricePerKm
+
+  // Apply multiplier based on ride type
+  switch (rideType) {
+    case "xl":
+      return standardPrice * 1.5
+    case "premium":
+      return standardPrice * 2
+    case "standard":
+    default:
+      return standardPrice
+  }
+}
+
+/**
+ * Get coordinates from address using Nominatim (OpenStreetMap)
+ */
+export const getCoordinatesFromAddress = async (address: string): Promise<Coordinates | null> => {
+  try {
+    const encodedAddress = encodeURIComponent(address)
+    const response = await fetch(`https://nominatim.openstreetmap.org/search?format=json&q=${encodedAddress}&limit=1`, {
+      headers: {
+        "Accept-Language": "en",
+        "User-Agent": "RidesharingApp/1.0",
+      },
+    })
+
+    if (!response.ok) {
+      throw new Error(`Nominatim API error: ${response.status}`)
+    }
+
+    const data = await response.json()
+
+    if (data && data.length > 0) {
+      const { lat, lon } = data[0]
+      return {
+        latitude: Number.parseFloat(lat),
+        longitude: Number.parseFloat(lon),
+      }
+    }
+
+    return null
+  } catch (error) {
+    console.error("Error getting coordinates from address:", error)
+    return null
+  }
 }
 

@@ -11,7 +11,7 @@ interface Place {
   id: string
   name: string
   address: string
-  coordinates?: {
+  coordinates: {
     latitude: number
     longitude: number
   }
@@ -40,9 +40,9 @@ const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
   const [isLoading, setIsLoading] = useState(false)
   const [isFocused, setIsFocused] = useState(false)
 
-  // Function to fetch place predictions using Nominatim
+  // Function to fetch place predictions using the searchPlaces function
   const fetchPredictions = async (text: string) => {
-    if (!text) {
+    if (!text || text.trim().length < 3) {
       setPredictions([])
       return
     }
@@ -111,7 +111,7 @@ const LocationSearchInput: React.FC<LocationSearchInputProps> = ({
             setTimeout(() => setIsFocused(false), 200)
           }}
         />
-        {isLoading && <ActivityIndicator size="small" color="#4285F4" />}
+        {isLoading && <ActivityIndicator size="small" color="#4CAF50" />}
       </View>
 
       {isFocused && predictions.length > 0 && (
@@ -153,7 +153,7 @@ const styles = StyleSheet.create({
     backgroundColor: "#FFFFFF",
   },
   focusedInput: {
-    borderColor: "#4285F4",
+    borderColor: "#4CAF50",
   },
   input: {
     flex: 1,
