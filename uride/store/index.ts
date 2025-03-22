@@ -2,6 +2,7 @@ import { create } from "zustand"
 import { getAuthState, signIn, signOut, signUp, signInWithGoogle } from "../lib/auth"
 import { supabase } from "../lib/supabase"
 import type { LocationDetails } from "../lib/map"
+import { clearAllCache } from "../lib/cache"
 
 // User interface
 interface User {
@@ -25,6 +26,7 @@ interface Ride {
   duration: number
   createdAt: Date
   scheduledFor?: Date
+  driver?: Driver
 }
 
 // Driver interface
@@ -49,6 +51,15 @@ interface PaymentMethod {
   name: string
   details: string
   isDefault: boolean
+}
+
+// Message interface
+interface Message {
+  id: string
+  text: string
+  sender: "user" | "driver" | "system"
+  timestamp: Date
+  status: "sending" | "sent" | "delivered" | "read" | "error"
 }
 
 // App state interface
@@ -77,12 +88,18 @@ interface AppState {
   paymentMethods: PaymentMethod[]
   selectedPaymentMethod: string | null
 
+  // Chat state
+  messages: Message[]
+
   // Actions
   initialize: () => Promise<void>
   login: (email: string, password: string) => Promise<boolean>
   register: (email: string, password: string, name: string, phone?: string) => Promise<boolean>
   logout: () => Promise<void>
   loginWithGoogle: (accessToken: string) => Promise<boolean>
+
+  // Profile actions
+  updateUserProfile: (updates: Partial<User>) => Promise<boolean>
 
   setCurrentLocation: (location: LocationDetails | null) => void
   setSelectedPickup: (location: LocationDetails | null) => void
@@ -98,6 +115,10 @@ interface AppState {
   updateRide: (rideId: string, updates: Partial<Ride>) => Promise<Ride | null>
   cancelRide: (rideId: string) => Promise<boolean>
   fetchRides: () => Promise<Ride[]>
+
+  // Chat actions
+  sendMessage: (text: string) => Promise<boolean>
+  getMessages: () => Promise<Message[]>
 }
 
 // Create store
@@ -121,6 +142,8 @@ export const useStore = create<AppState>((set, get) => ({
 
   paymentMethods: [],
   selectedPaymentMethod: null,
+
+  messages: [],
 
   // Actions
   initialize: async () => {
@@ -200,6 +223,7 @@ export const useStore = create<AppState>((set, get) => ({
 
     try {
       await signOut()
+      await clearAllCache()
 
       set({
         user: null,
@@ -213,6 +237,7 @@ export const useStore = create<AppState>((set, get) => ({
         selectedDestination: null,
         selectedDriver: null,
         selectedPaymentMethod: null,
+        messages: [],
       })
     } catch (error) {
       set({ isLoading: false })
@@ -240,6 +265,34 @@ export const useStore = create<AppState>((set, get) => ({
         authError: "An error occurred during Google login",
       })
 
+      return false
+    }
+  },
+
+  updateUserProfile: async (updates) => {
+    try {
+      const userId = get().user?.id
+
+      if (!userId) {
+        throw new Error("User not authenticated")
+      }
+
+      // Update profile in Supabase
+      const { error } = await supabase.from("profiles").update(updates).eq("id", userId)
+
+      if (error) {
+        console.error("Error updating profile:", error)
+        return false
+      }
+
+      // Update local state
+      set((state) => ({
+        user: state.user ? { ...state.user, ...updates } : null,
+      }))
+
+      return true
+    } catch (error) {
+      console.error("Error updating profile:", error)
       return false
     }
   },
@@ -518,6 +571,101 @@ export const useStore = create<AppState>((set, get) => ({
       return rides
     } catch (error) {
       console.error("Error in fetchRides:", error)
+      return []
+    }
+  },
+
+  // Chat methods
+  sendMessage: async (text) => {
+    try {
+      const userId = get().user?.id
+      const currentRide = get().currentRide
+
+      if (!userId || !currentRide) {
+        throw new Error("User not authenticated or no active ride")
+      }
+
+      // In a real app, you would send the message to your API
+      // For this example, we'll just simulate a successful send
+
+      // Add message to local state
+      const newMessage: Message = {
+        id: Date.now().toString(),
+        text,
+        sender: "user",
+        timestamp: new Date(),
+        status: "sent",
+      }
+
+      set((state) => ({
+        messages: [...state.messages, newMessage],
+      }))
+
+      return true
+    } catch (error) {
+      console.error("Error sending message:", error)
+      return false
+    }
+  },
+
+  getMessages: async () => {
+    try {
+      const userId = get().user?.id
+      const currentRide = get().currentRide
+
+      if (!userId) {
+        return []
+      }
+
+      // In a real app, you would fetch messages from your API
+      // For this example, we'll return mock messages
+
+      // Simulate API call
+      await new Promise((resolve) => setTimeout(resolve, 1000))
+
+      const mockMessages: Message[] = [
+        {
+          id: "1",
+          text: "Your ride has been confirmed.",
+          sender: "system",
+          timestamp: new Date(Date.now() - 3600000), // 1 hour ago
+          status: "delivered",
+        },
+        {
+          id: "2",
+          text: "I am on my way to pick you up.",
+          sender: "driver",
+          timestamp: new Date(Date.now() - 1800000), // 30 minutes ago
+          status: "delivered",
+        },
+        {
+          id: "3",
+          text: "Great! I'll be waiting outside.",
+          sender: "user",
+          timestamp: new Date(Date.now() - 1700000), // 28 minutes ago
+          status: "read",
+        },
+        {
+          id: "4",
+          text: "I'm stuck in a bit of traffic. Will be there in about 5 minutes.",
+          sender: "driver",
+          timestamp: new Date(Date.now() - 900000), // 15 minutes ago
+          status: "delivered",
+        },
+        {
+          id: "5",
+          text: "No problem, take your time.",
+          sender: "user",
+          timestamp: new Date(Date.now() - 800000), // 13 minutes ago
+          status: "read",
+        },
+      ]
+
+      set({ messages: mockMessages })
+
+      return mockMessages
+    } catch (error) {
+      console.error("Error fetching messages:", error)
       return []
     }
   },

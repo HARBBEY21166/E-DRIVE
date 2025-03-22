@@ -1,6 +1,6 @@
 "use client"
 
-import { useState, useEffect } from "react"
+import { useState } from "react"
 import {
   View,
   Text,
@@ -17,27 +17,24 @@ import { useRouter } from "expo-router"
 import InputField from "../../components/InputField"
 import CustomButton from "../../components/CustomButton"
 import OAuth from "../../components/OAuth"
-import useStore from "../../store"
 import { validateEmail } from "../../lib/utils"
-import { useGoogleSignIn } from "../../lib/auth"
+import { useAuth } from "../../context/AuthContext"
+import { useTheme } from "../../context/ThemeContext"
+import ErrorAlert from "../../components/ErrorAlert"
+import type { UserType } from "../../types/type"
 
 const SignInScreen = () => {
   const router = useRouter()
-  const { login, loginWithGoogle, isLoading, authError } = useStore()
-  const { promptAsync, response } = useGoogleSignIn()
+  const { login, loginWithGoogle, isLoading, error, userType } = useAuth()
+  const { colors, isDarkMode } = useTheme()
 
   const [email, setEmail] = useState("")
   const [password, setPassword] = useState("")
+  const [selectedUserType, setSelectedUserType] = useState<UserType>("rider")
   const [errors, setErrors] = useState({
     email: "",
     password: "",
   })
-
-  useEffect(() => {
-    if (response?.type === "success" && response.authentication) {
-      handleGoogleAuthResponse(response.authentication.accessToken)
-    }
-  }, [response])
 
   const validateForm = () => {
     let isValid = true
@@ -65,23 +62,27 @@ const SignInScreen = () => {
 
     const success = await login(email, password)
     if (success) {
-      router.replace("/(root)/(tabs)/home")
+      if (userType === "rider") {
+        router.replace("/(root)/(tabs)/home")
+      } else {
+        router.replace("/(driver)/(tabs)/home")
+      }
     }
   }
 
   const handleGoogleSignIn = async () => {
     try {
-      await promptAsync()
+      const success = await loginWithGoogle(selectedUserType)
+      if (success) {
+        if (userType === "rider") {
+          router.replace("/(root)/(tabs)/home")
+        } else {
+          router.replace("/(driver)/(tabs)/home")
+        }
+      }
     } catch (error) {
       console.error("Google sign in error:", error)
       Alert.alert("Error", "Failed to sign in with Google. Please try again.")
-    }
-  }
-
-  const handleGoogleAuthResponse = async (accessToken: string) => {
-    const success = await loginWithGoogle(accessToken)
-    if (success) {
-      router.replace("/(root)/(tabs)/home")
     }
   }
 
@@ -90,7 +91,7 @@ const SignInScreen = () => {
   }
 
   return (
-    <SafeAreaView style={styles.container}>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.BACKGROUND }]}>
       <KeyboardAvoidingView behavior={Platform.OS === "ios" ? "padding" : "height"} style={styles.keyboardAvoidingView}>
         <ScrollView contentContainerStyle={styles.scrollContent}>
           <View style={styles.header}>
@@ -101,11 +102,11 @@ const SignInScreen = () => {
             />
           </View>
 
-          <View style={styles.formContainer}>
-            <Text style={styles.title}>Welcome Back</Text>
-            <Text style={styles.subtitle}>Sign in to your account</Text>
+          <View style={[styles.formContainer, { backgroundColor: colors.SURFACE }]}>
+            <Text style={[styles.title, { color: colors.TEXT }]}>Welcome Back</Text>
+            <Text style={[styles.subtitle, { color: colors.TEXT_SECONDARY }]}>Sign in to your account</Text>
 
-            {authError && <Text style={styles.errorText}>{authError}</Text>}
+            {error && <ErrorAlert message={error} onDismiss={() => {}} />}
 
             <InputField
               label="Email"
@@ -129,6 +130,57 @@ const SignInScreen = () => {
               style={styles.input}
             />
 
+            <Text style={[styles.sectionTitle, { color: colors.TEXT }]}>Sign in as:</Text>
+            <View style={styles.userTypeContainer}>
+              <TouchableOpacity
+                style={[
+                  styles.userTypeButton,
+                  selectedUserType === "rider" && [styles.selectedUserType, { borderColor: colors.PRIMARY }],
+                  { backgroundColor: isDarkMode ? colors.BACKGROUND : colors.SURFACE },
+                ]}
+                onPress={() => setSelectedUserType("rider")}
+              >
+                <Image
+                  source={require("../../assets/icons/circle-user-solid.svg")}
+                  style={[
+                    styles.userTypeIcon,
+                    { tintColor: selectedUserType === "rider" ? colors.PRIMARY : colors.TEXT_SECONDARY },
+                  ]}
+                />
+                <Text
+                  style={[styles.userTypeText, { color: selectedUserType === "rider" ? colors.PRIMARY : colors.TEXT }]}
+                >
+                  Rider
+                </Text>
+              </TouchableOpacity>
+
+              <TouchableOpacity
+                style={[
+                  styles.userTypeButton,
+                  selectedUserType === "driver" && [styles.selectedUserType, { borderColor: colors.PRIMARY }],
+                  { backgroundColor: isDarkMode ? colors.BACKGROUND : colors.SURFACE },
+                ]}
+                onPress={() => setSelectedUserType("driver")}
+              >
+                <Image
+                  source={require("../../assets/icons/car.svg")}
+                  style={[
+                    styles.userTypeIcon,
+                    { tintColor: selectedUserType === "driver" ? colors.PRIMARY : colors.TEXT_SECONDARY },
+                  ]}
+                />
+                <Text
+                  style={[styles.userTypeText, { color: selectedUserType === "driver" ? colors.PRIMARY : colors.TEXT }]}
+                >
+                  Driver
+                </Text>
+              </TouchableOpacity>
+            </View>
+
+            <TouchableOpacity style={styles.forgotPasswordContainer}>
+              <Text style={[styles.forgotPasswordText, { color: colors.PRIMARY }]}>Forgot Password?</Text>
+            </TouchableOpacity>
+
             <CustomButton
               title="Sign In"
               onPress={handleSignIn}
@@ -140,9 +192,9 @@ const SignInScreen = () => {
             <OAuth onGooglePress={handleGoogleSignIn} />
 
             <View style={styles.signupContainer}>
-              <Text style={styles.signupText}>Don't have an account?</Text>
+              <Text style={[styles.signupText, { color: colors.TEXT_SECONDARY }]}>Don't have an account?</Text>
               <TouchableOpacity onPress={navigateToSignUp}>
-                <Text style={styles.signupLink}>Sign Up</Text>
+                <Text style={[styles.signupLink, { color: colors.PRIMARY }]}>Sign Up</Text>
               </TouchableOpacity>
             </View>
           </View>
@@ -155,7 +207,6 @@ const SignInScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#FFFFFF",
   },
   keyboardAvoidingView: {
     flex: 1,
@@ -175,25 +226,59 @@ const styles = StyleSheet.create({
   formContainer: {
     flex: 1,
     padding: 24,
+    borderTopLeftRadius: 24,
+    borderTopRightRadius: 24,
   },
   title: {
     fontSize: 28,
     fontWeight: "700",
-    color: "#1E293B",
     marginBottom: 8,
   },
   subtitle: {
     fontSize: 16,
-    color: "#64748B",
     marginBottom: 24,
-  },
-  errorText: {
-    color: "#EF4444",
-    marginBottom: 16,
-    fontSize: 14,
   },
   input: {
     marginBottom: 16,
+  },
+  sectionTitle: {
+    fontSize: 16,
+    fontWeight: "600",
+    marginTop: 8,
+    marginBottom: 12,
+  },
+  userTypeContainer: {
+    flexDirection: "row",
+    justifyContent: "space-between",
+    marginBottom: 16,
+  },
+  userTypeButton: {
+    width: "48%",
+    padding: 16,
+    borderRadius: 12,
+    borderWidth: 1,
+    borderColor: "#E2E8F0",
+    alignItems: "center",
+  },
+  selectedUserType: {
+    borderWidth: 2,
+  },
+  userTypeIcon: {
+    width: 32,
+    height: 32,
+    marginBottom: 8,
+  },
+  userTypeText: {
+    fontSize: 14,
+    fontWeight: "500",
+  },
+  forgotPasswordContainer: {
+    alignItems: "flex-end",
+    marginBottom: 16,
+  },
+  forgotPasswordText: {
+    fontSize: 14,
+    fontWeight: "500",
   },
   button: {
     marginTop: 8,
@@ -206,12 +291,10 @@ const styles = StyleSheet.create({
   },
   signupText: {
     fontSize: 14,
-    color: "#64748B",
   },
   signupLink: {
     fontSize: 14,
     fontWeight: "600",
-    color: "#4285F4",
     marginLeft: 4,
   },
 })

@@ -1,21 +1,36 @@
 "use client"
 
 import { useState } from "react"
-import { View, Text, StyleSheet, SafeAreaView, Image, TouchableOpacity, ScrollView, Alert } from "react-native"
+import { View, Text, StyleSheet, SafeAreaView, Image, TouchableOpacity, ScrollView, Alert, Switch } from "react-native"
 import { useRouter } from "expo-router"
 import CustomButton from "../../../components/CustomButton"
+import ImagePicker from "../../../components/ImagePicker"
 import useStore from "../../../store"
+import { useTheme } from "../../../context/ThemeContext"
+import ErrorAlert from "../../../components/ErrorAlert"
 
 const ProfileScreen = () => {
   const router = useRouter()
-  const { user, logout } = useStore()
+  const { user, logout, updateUserProfile } = useStore()
+  const { colors, isDarkMode, toggleTheme } = useTheme()
+
   const [isLoading, setIsLoading] = useState(false)
+  const [isUploading, setIsUploading] = useState(false)
+  const [error, setError] = useState<string | null>(null)
 
   const handleLogout = async () => {
     setIsLoading(true)
-    await logout()
-    setIsLoading(false)
-    router.replace("/(auth)/welcome")
+    setError(null)
+
+    try {
+      await logout()
+      router.replace("/(auth)/welcome")
+    } catch (err) {
+      setError("Failed to logout. Please try again.")
+      console.error("Logout error:", err)
+    } finally {
+      setIsLoading(false)
+    }
   }
 
   const confirmLogout = () => {
@@ -37,100 +52,120 @@ const ProfileScreen = () => {
     )
   }
 
+  const handleImageSelected = async (imageUri: string) => {
+    setIsUploading(true)
+    setError(null)
+
+    try {
+      // In a real app, you would upload the image to a server here
+      // For this example, we'll just update the user profile directly
+      await updateUserProfile({ avatar: imageUri })
+    } catch (err) {
+      setError("Failed to update profile image. Please try again.")
+      console.error("Image upload error:", err)
+    } finally {
+      setIsUploading(false)
+    }
+  }
+
   return (
-    <SafeAreaView style={styles.container}>
-      <View style={styles.header}>
-        <Text style={styles.title}>Profile</Text>
+    <SafeAreaView style={[styles.container, { backgroundColor: colors.BACKGROUND }]}>
+      <View style={[styles.header, { backgroundColor: colors.SURFACE, borderBottomColor: colors.BORDER }]}>
+        <Text style={[styles.title, { color: colors.TEXT }]}>Profile</Text>
       </View>
 
       <ScrollView style={styles.content}>
-        <View style={styles.profileSection}>
-          <View style={styles.profileImageContainer}>
-            <Image
-              source={user?.avatar ? { uri: user.avatar } : require("../../../assets/icons/person.png")}
-              style={styles.profileImage}
-            />
-            <TouchableOpacity style={styles.editImageButton}>
-              <Text style={styles.editImageText}>Edit</Text>
-            </TouchableOpacity>
-          </View>
-          <Text style={styles.userName}>{user?.name || "User"}</Text>
-          <Text style={styles.userEmail}>{user?.email || "user@example.com"}</Text>
+        {error && <ErrorAlert message={error} onRetry={() => setError(null)} onDismiss={() => setError(null)} />}
+
+        <View style={[styles.profileSection, { backgroundColor: colors.SURFACE }]}>
+          <ImagePicker
+            onImageSelected={handleImageSelected}
+            defaultImage={user?.avatar}
+            size={100}
+            label="Tap to change profile picture"
+            loading={isUploading}
+          />
+
+          <Text style={[styles.userName, { color: colors.TEXT }]}>{user?.name || "User"}</Text>
+          <Text style={[styles.userEmail, { color: colors.TEXT_SECONDARY }]}>{user?.email || "user@example.com"}</Text>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Account</Text>
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Personal Information</Text>
+        <View style={[styles.section, { backgroundColor: colors.SURFACE }]}>
+          <Text style={[styles.sectionTitle, { color: colors.TEXT }]}>Account</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.BORDER }]}>
+            <Text style={[styles.menuItemText, { color: colors.TEXT }]}>Personal Information</Text>
             <Image
               source={require("../../../assets/icons/arrow-down.png")}
-              style={[styles.menuItemIcon, { transform: [{ rotate: "-90deg" }] }]}
+              style={[styles.menuItemIcon, { transform: `rotate(-90deg)`, tintColor: colors.TEXT_SECONDARY }]}
             />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Payment Methods</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.BORDER }]}>
+            <Text style={[styles.menuItemText, { color: colors.TEXT }]}>Payment Methods</Text>
             <Image
               source={require("../../../assets/icons/arrow-down.png")}
-              style={[styles.menuItemIcon, { transform: [{ rotate: "-90deg" }] }]}
+              style={[styles.menuItemIcon, { transform: `rotate(-90deg)`, tintColor: colors.TEXT_SECONDARY }]}
             />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Notifications</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.BORDER }]}>
+            <Text style={[styles.menuItemText, { color: colors.TEXT }]}>Notifications</Text>
             <Image
               source={require("../../../assets/icons/arrow-down.png")}
-              style={[styles.menuItemIcon, { transform: [{ rotate: "-90deg" }] }]}
+              style={[styles.menuItemIcon, { transform: `rotate(-90deg)`, tintColor: colors.TEXT_SECONDARY }]}
             />
           </TouchableOpacity>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Preferences</Text>
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Language</Text>
+        <View style={[styles.section, { backgroundColor: colors.SURFACE }]}>
+          <Text style={[styles.sectionTitle, { color: colors.TEXT }]}>Preferences</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.BORDER }]}>
+            <Text style={[styles.menuItemText, { color: colors.TEXT }]}>Language</Text>
             <View style={styles.menuItemValue}>
-              <Text style={styles.menuItemValueText}>English</Text>
+              <Text style={[styles.menuItemValueText, { color: colors.TEXT_SECONDARY }]}>English</Text>
               <Image
                 source={require("../../../assets/icons/arrow-down.png")}
-                style={[styles.menuItemIcon, { transform: [{ rotate: "-90deg" }] }]}
+                style={[styles.menuItemIcon, { transform: `rotate(-90deg)`, tintColor: colors.TEXT_SECONDARY }]}
               />
             </View>
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Dark Mode</Text>
-            <View style={styles.toggleContainer}>
-              <View style={styles.toggleOff} />
-            </View>
-          </TouchableOpacity>
+          <View style={[styles.menuItem, { borderBottomColor: colors.BORDER }]}>
+            <Text style={[styles.menuItemText, { color: colors.TEXT }]}>Dark Mode</Text>
+            <Switch
+              value={isDarkMode}
+              onValueChange={toggleTheme}
+              trackColor={{ false: colors.BORDER, true: colors.PRIMARY }}
+              thumbColor="#FFFFFF"
+            />
+          </View>
         </View>
 
-        <View style={styles.section}>
-          <Text style={styles.sectionTitle}>Support</Text>
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Help Center</Text>
+        <View style={[styles.section, { backgroundColor: colors.SURFACE }]}>
+          <Text style={[styles.sectionTitle, { color: colors.TEXT }]}>Support</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.BORDER }]}>
+            <Text style={[styles.menuItemText, { color: colors.TEXT }]}>Help Center</Text>
             <Image
               source={require("../../../assets/icons/arrow-down.png")}
-              style={[styles.menuItemIcon, { transform: [{ rotate: "-90deg" }] }]}
+              style={[styles.menuItemIcon, { transform: `rotate(-90deg)`, tintColor: colors.TEXT_SECONDARY }]}
             />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Report a Problem</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.BORDER }]}>
+            <Text style={[styles.menuItemText, { color: colors.TEXT }]}>Report a Problem</Text>
             <Image
               source={require("../../../assets/icons/arrow-down.png")}
-              style={[styles.menuItemIcon, { transform: [{ rotate: "-90deg" }] }]}
+              style={[styles.menuItemIcon, { transform: `rotate(-90deg)`, tintColor: colors.TEXT_SECONDARY }]}
             />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Terms of Service</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.BORDER }]}>
+            <Text style={[styles.menuItemText, { color: colors.TEXT }]}>Terms of Service</Text>
             <Image
               source={require("../../../assets/icons/arrow-down.png")}
-              style={[styles.menuItemIcon, { transform: [{ rotate: "-90deg" }] }]}
+              style={[styles.menuItemIcon, { transform: `rotate(-90deg)`, tintColor: colors.TEXT_SECONDARY }]}
             />
           </TouchableOpacity>
-          <TouchableOpacity style={styles.menuItem}>
-            <Text style={styles.menuItemText}>Privacy Policy</Text>
+          <TouchableOpacity style={[styles.menuItem, { borderBottomColor: colors.BORDER }]}>
+            <Text style={[styles.menuItemText, { color: colors.TEXT }]}>Privacy Policy</Text>
             <Image
               source={require("../../../assets/icons/arrow-down.png")}
-              style={[styles.menuItemIcon, { transform: [{ rotate: "-90deg" }] }]}
+              style={[styles.menuItemIcon, { transform: `rotate(-90deg)`, tintColor: colors.TEXT_SECONDARY }]}
             />
           </TouchableOpacity>
         </View>
@@ -138,8 +173,8 @@ const ProfileScreen = () => {
         <CustomButton
           title="Logout"
           onPress={confirmLogout}
-          style={styles.logoutButton}
-          textStyle={styles.logoutButtonText}
+          style={[styles.logoutButton, { borderColor: colors.ERROR }]}
+          textStyle={[styles.logoutButtonText, { color: colors.ERROR }]}
           primary={false}
           outline={true}
           loading={isLoading}
@@ -152,19 +187,15 @@ const ProfileScreen = () => {
 const styles = StyleSheet.create({
   container: {
     flex: 1,
-    backgroundColor: "#F8FAFC",
   },
   header: {
     paddingHorizontal: 16,
     paddingVertical: 16,
-    backgroundColor: "#FFFFFF",
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
   },
   title: {
     fontSize: 20,
     fontWeight: "600",
-    color: "#1E293B",
   },
   content: {
     flex: 1,
@@ -172,44 +203,16 @@ const styles = StyleSheet.create({
   profileSection: {
     alignItems: "center",
     padding: 24,
-    backgroundColor: "#FFFFFF",
-  },
-  profileImageContainer: {
-    position: "relative",
-    marginBottom: 16,
-  },
-  profileImage: {
-    width: 100,
-    height: 100,
-    borderRadius: 50,
-    backgroundColor: "#F1F5F9",
-  },
-  editImageButton: {
-    position: "absolute",
-    bottom: 0,
-    right: 0,
-    backgroundColor: "#4285F4",
-    borderRadius: 12,
-    paddingHorizontal: 8,
-    paddingVertical: 4,
-  },
-  editImageText: {
-    color: "#FFFFFF",
-    fontSize: 12,
-    fontWeight: "500",
   },
   userName: {
     fontSize: 20,
     fontWeight: "600",
-    color: "#1E293B",
     marginBottom: 4,
   },
   userEmail: {
     fontSize: 14,
-    color: "#64748B",
   },
   section: {
-    backgroundColor: "#FFFFFF",
     marginTop: 16,
     paddingHorizontal: 16,
     paddingVertical: 16,
@@ -217,7 +220,6 @@ const styles = StyleSheet.create({
   sectionTitle: {
     fontSize: 16,
     fontWeight: "600",
-    color: "#1E293B",
     marginBottom: 16,
   },
   menuItem: {
@@ -226,16 +228,13 @@ const styles = StyleSheet.create({
     alignItems: "center",
     paddingVertical: 12,
     borderBottomWidth: 1,
-    borderBottomColor: "#E2E8F0",
   },
   menuItemText: {
     fontSize: 16,
-    color: "#1E293B",
   },
   menuItemIcon: {
     width: 16,
     height: 16,
-    tintColor: "#64748B",
   },
   menuItemValue: {
     flexDirection: "row",
@@ -243,29 +242,14 @@ const styles = StyleSheet.create({
   },
   menuItemValueText: {
     fontSize: 14,
-    color: "#64748B",
     marginRight: 8,
-  },
-  toggleContainer: {
-    width: 40,
-    height: 24,
-    borderRadius: 12,
-    backgroundColor: "#E2E8F0",
-    justifyContent: "center",
-    paddingHorizontal: 2,
-  },
-  toggleOff: {
-    width: 20,
-    height: 20,
-    borderRadius: 10,
-    backgroundColor: "#FFFFFF",
   },
   logoutButton: {
     marginHorizontal: 16,
     marginVertical: 24,
   },
   logoutButtonText: {
-    color: "#EF4444",
+    fontWeight: "600",
   },
 })
 

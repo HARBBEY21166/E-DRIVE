@@ -3,17 +3,20 @@ import AsyncStorage from "@react-native-async-storage/async-storage"
 import { createClient } from "@supabase/supabase-js"
 
 // Replace with your Supabase URL and anon key
-const supabaseUrl = "https://vvfwjlnpfdpzauuusdga.supabase.co"
-const supabaseAnonKey = "eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InZ2ZndqbG5wZmRwemF1dXVzZGdhIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NDI0ODczNjcsImV4cCI6MjA1ODA2MzM2N30.XMlq0423mtsDlTSKY6_gWU61CDbQ-eghYX48qfNuXtQ"
+//const supabaseUrl = "YOUR_SUPABASE_URL"
+//const supabaseAnonKey = "YOUR_SUPABASE_ANON_KEY"
 
-export const supabase = createClient(supabaseUrl, supabaseAnonKey, {
-  auth: {
-    storage: AsyncStorage,
-    autoRefreshToken: true,
-    persistSession: true,
-    detectSessionInUrl: false,
-  },
-})
+export const supabase = createClient(
+  process.env.EXPO_PUBLIC_SUPABASE_URL || "",
+  process.env.EXPO_PUBLIC_SUPABASE_ANON_KEY || "",
+  {
+    auth: {
+      storage: AsyncStorage,
+      autoRefreshToken: true,
+      persistSession: true,
+      detectSessionInUrl: false,
+    },
+  })
 
 // Helper function to get the current user
 export const getCurrentUser = async () => {
